@@ -239,7 +239,7 @@ const (
 type ComponentStatus struct {
 	// Kind is the kind of the component, e.g., PD, TiKV, TiDB, TiFlash.
 	// +kubebuilder:validation:Required
-	// +kubebuilder:validation:Enum=PD;TiKV;TiDB;TiFlash;TiCDC;TiProxy;TiKVWorker
+	// +kubebuilder:validation:Enum=PD;TiKV;TiDB;TiFlash;TiCDC;TiProxy;TiKVWorker;TiDBOne;TiDBOneRouter
 	Kind ComponentKind `json:"kind"`
 
 	// Replicas is the number of desired replicas of the component.

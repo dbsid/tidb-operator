@@ -122,6 +122,10 @@ crds:
 - ticdcgroups.core.pingcap.com
 - ticdcs.core.pingcap.com
 - tidbgroups.core.pingcap.com
+- tidbonegroups.core.pingcap.com
+- tidboneroutergroups.core.pingcap.com
+- tidbonerouters.core.pingcap.com
+- tidbones.core.pingcap.com
 - tidbs.core.pingcap.com
 - tiflashes.core.pingcap.com
 - tiflashgroups.core.pingcap.com

@@ -1,0 +1,28 @@
+apiVersion: core.pingcap.com/v1alpha1
+kind: TiDBOneGroup
+metadata:
+  name: one
+spec:
+  cluster:
+    name: one
+  replicas: 3
+  template:
+    spec:
+      version: v9.0.0-tidbone
+      # image: ghcr.io/dbsid/tidb-one-server (the default)
+      resources:
+        cpu: "4"
+        memory: 8Gi
+      # TiDB config (tidb.toml)
+      config: |
+        [log]
+        level = "warn"
+      # Config of the embedded TiKV (tikv.toml)
+      tikvConfig: |
+        [storage.block-cache]
+        capacity = "2GiB"
+      volumes:
+      - name: data
+        mounts:
+        - type: data
+        storage: 50Gi

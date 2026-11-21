@@ -1,0 +1,132 @@
+// Copyright 2024 PingCAP, Inc.
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+package tidbone
+
+import (
+	"k8s.io/apimachinery/pkg/api/meta"
+
+	"github.com/pingcap/tidb-operator/api/v2/core/v1alpha1"
+	coreutil "github.com/pingcap/tidb-operator/v2/pkg/apiutil/core/v1alpha1"
+	"github.com/pingcap/tidb-operator/v2/pkg/controllers/common"
+	"github.com/pingcap/tidb-operator/v2/pkg/controllers/tidbone/tasks"
+	"github.com/pingcap/tidb-operator/v2/pkg/runtime/scope"
+	"github.com/pingcap/tidb-operator/v2/pkg/utils/task/v3"
+)
+
+func (r *Reconciler) NewRunner(state *tasks.ReconcileContext, reporter task.TaskReporter) task.TaskRunner {
+	runner := task.NewTaskRunner(reporter,
+		// get one
+		common.TaskContextObject[scope.TiDBOne](state, r.Client),
+		common.TaskTrack[scope.TiDBOne](state, r.Tracker),
+		// refresh the abnormal_instance gauge, or clear it if the CR is gone
+		common.TaskObserveInstance[scope.TiDBOne](state),
+		// if it's deleted just return
+		task.IfBreak(common.CondObjectHasBeenDeleted[scope.TiDBOne](state)),
+
+		// get cluster info, FinalizerDel will use it
+		common.TaskContextCluster[scope.TiDBOne](state, r.Client),
+
+		// check whether it's paused
+		task.IfBreak(common.CondClusterIsPaused(state)),
+
+		// if the cluster is deleting, del all subresources and remove the finalizer directly
+		task.IfBreak(common.CondClusterIsDeleting(state),
+			common.TaskInstanceFinalizerDel[scope.TiDBOne](state, r.Client, tasks.SubresourceLister),
+		),
+
+		// return if cluster's status is not updated
+		task.IfBreak(common.CondClusterPDAddrIsNotRegistered(state)),
+
+		// if instance is not deleting but store is offlined
+		task.IfBreak(common.CondObjectIsNotDeletingButOfflined[scope.TiDBOne](state),
+			common.TaskDeleteOfflinedStore[scope.TiDBOne](state, r.Client),
+		),
+
+		// get pod and check whether the cluster is suspending
+		common.TaskValidateInstanceName(state),
+		common.TaskContextPod[scope.TiDBOne](state, r.Client),
+		// get info from pd
+		tasks.TaskContextInfoFromPD(state, r.PDClientManager),
+
+		// if instance is deleting and its Offlined condition is persisted
+		task.IfBreak(ObjectIsDeletingAndStoreIsOfflined(state),
+			tasks.TaskEndEvictLeader(state, r.PDClientManager),
+			tasks.TaskWaitCacheTTLAfterStoreRemoved(state),
+			common.TaskInstanceFinalizerDel[scope.TiDBOne](state, r.Client, tasks.SubresourceLister),
+		),
+
+		// if instance is deleting, ensure spec.offline is set
+		task.IfBreak(ObjectIsDeletingAndNotOffline(state),
+			common.TaskSetOffline[scope.TiDBOne](state, r.Client),
+		),
+
+		common.TaskFinalizerAdd[scope.TiDBOne](state, r.Client),
+		common.TaskInstanceConditionVolumeCapacityExceedsRequest[scope.TiDBOne](state, r.Client),
+		common.TaskInstanceConditionSuspended[scope.TiDBOne](state),
+
+		// check whether the cluster is suspending
+		// if cluster is suspending, we cannot handle any one deletion
+		task.IfBreak(common.CondClusterIsSuspending(state),
+			// NOTE: suspend one pod should delete with grace peroid
+			// TODO(liubo02): combine with the common one
+			common.TaskInstanceConditionSynced[scope.TiDBOne](state),
+			common.TaskInstanceConditionReady[scope.TiDBOne](state),
+			common.TaskInstanceConditionRunning[scope.TiDBOne](state),
+			task.If(PDIsSynced(state), common.TaskInstanceConditionOffline[scope.TiDBOne](state)),
+			common.TaskStatusPersister[scope.TiDBOne](state, r.Client),
+			tasks.TaskSuspendPod(state, r.Client),
+		),
+
+		// normal process
+		tasks.TaskStoreLimitAdjust(state, r.Client, r.PDClientManager),
+		tasks.TaskOfflineStore(state, r.PDClientManager, r.Client),
+		tasks.TaskConfigMap(state, r.Client),
+		common.TaskPVC[scope.TiDBOne](state, r.Client, r.VolumeModifierFactory, tasks.PVCNewer()),
+		tasks.TaskPod(state, r.Client, r.PDClientManager, r.EventRecorder),
+		tasks.TaskStoreLabels(state, r.Client, r.PDClientManager),
+		tasks.TaskEvictLeader(state, r.PDClientManager),
+		tasks.TaskRouterDrain(state, r.Client, r.RouterAPI),
+		common.TaskInstanceConditionSynced[scope.TiDBOne](state),
+		// only set ready if pd is synced
+		task.If(PDIsSynced(state),
+			common.TaskInstanceConditionReady[scope.TiDBOne](state),
+			common.TaskInstanceConditionOffline[scope.TiDBOne](state),
+		),
+		common.TaskInstanceConditionRunning[scope.TiDBOne](state),
+		tasks.TaskStatus(state, r.Client),
+	)
+
+	return runner
+}
+
+func ObjectIsDeletingAndStoreIsOfflined(state *tasks.ReconcileContext) task.Condition {
+	return task.CondFunc(func() bool {
+		return !state.Object().GetDeletionTimestamp().IsZero() &&
+			meta.IsStatusConditionTrue(state.Object().Status.Conditions, v1alpha1.StoreOfflinedConditionType)
+	})
+}
+
+func ObjectIsDeletingAndNotOffline(state *tasks.ReconcileContext) task.Condition {
+	return task.CondFunc(func() bool {
+		obj := state.Object()
+		return !obj.GetDeletionTimestamp().IsZero() && !coreutil.IsOffline[scope.TiDBOne](obj)
+	})
+}
+
+func PDIsSynced(state *tasks.ReconcileContext) task.Condition {
+	return task.CondFunc(func() bool {
+		return state.PDSynced
+	})
+}

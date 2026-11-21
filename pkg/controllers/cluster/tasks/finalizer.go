@@ -69,7 +69,8 @@ func (t *TaskFinalizer) Sync(ctx task.Context[ReconcileContext]) task.Result {
 		len(rtx.TiProxyGroups) == 0 &&
 		len(rtx.TiKVWorkerGroups) == 0 &&
 		len(rtx.DMGroups) == 0 &&
-		len(rtx.DMWorkerGroups) == 0 {
+		len(rtx.DMWorkerGroups) == 0 &&
+		rtx.tidbOneGroups.count() == 0 { // tidb-one
 		if err := apicall.RemoveFinalizer(ctx, t.Client, rtx.Cluster); err != nil {
 			return task.Fail().With("can't remove finalizer: %v", err)
 		}
@@ -151,6 +152,10 @@ func (t *TaskFinalizer) Sync(ctx task.Context[ReconcileContext]) task.Result {
 		if err := t.Client.Delete(ctx, wg); client.IgnoreNotFound(err) != nil {
 			return task.Fail().With("can't delete tikv worker group: %v", err)
 		}
+	}
+
+	if err := rtx.tidbOneGroups.delete(ctx, t.Client); err != nil { // tidb-one
+		return task.Fail().With("%v", err)
 	}
 
 	for _, dmg := range rtx.DMGroups {

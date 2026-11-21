@@ -1,0 +1,15 @@
+apiVersion: core.pingcap.com/v1alpha1
+kind: TiDBOneRouterGroup
+metadata:
+  name: router
+spec:
+  cluster:
+    name: one
+  replicas: 2
+  template:
+    spec:
+      version: v9.0.0-tidbone
+      # image: ghcr.io/dbsid/tiproxy-rs (the default)
+      resources:
+        cpu: "2"
+        memory: 2Gi
