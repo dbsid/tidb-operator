@@ -266,7 +266,7 @@ func TestServerCommand(t *testing.T) {
 		Name:   "data",
 		Mounts: []v1alpha1.VolumeMount{{Type: v1alpha1.VolumeMountTypeTiDBOneData}},
 	}}
-	pod := newPod(cluster, one, &pdv1.Store{ID: "7"}, nil)
+	pod := newPod(cluster, one, &pdv1.Store{ID: "7"}, "", nil)
 	cmd := strings.Join(pod.Spec.Containers[0].Command, " ")
 	assert.Contains(t, cmd, "/tidb-one-server -P 4000 --status 10080")
 	assert.Contains(t, cmd, "--advertise-address aaa-tidb-one-xxx.one-tidb-one-peer.ns1.svc ")
@@ -279,4 +279,40 @@ func TestServerCommand(t *testing.T) {
 	assert.Equal(t, "7", pod.Labels[v1alpha1.LabelKeyStoreID])
 	assert.Equal(t, "/status", pod.Spec.Containers[0].ReadinessProbe.HTTPGet.Path)
 	assert.Equal(t, "ghcr.io/dbsid/tidb-one-server:v9.0.0-tidbone", pod.Spec.Containers[0].Image)
+}
+
+func TestTiDBConfig(t *testing.T) {
+	one := evictedOne(false)
+	one.Spec.Version = "v9.0.0"
+	one.Spec.Config = "[log]\nlevel = \"warn\"\n"
+	cfg, err := tidbConfig(one, "")
+	require.NoError(t, err)
+	assert.Equal(t, string(one.Spec.Config), cfg, "no signing cert: the config is kept as is")
+
+	cfg, err = tidbConfig(one, "token")
+	require.NoError(t, err)
+	assert.Contains(t, cfg, "level = 'warn'")
+	assert.Contains(t, cfg, "session-token-signing-cert = '"+v1alpha1.DirPathTiDBSessionTokenSigningTLS+"/tls.crt'")
+
+	one.Spec.Config = "[security]\nsession-token-signing-key = \"/x\"\n"
+	_, err = tidbConfig(one, "token")
+	require.ErrorIs(t, err, v1alpha1.ErrFieldIsManagedByOperator)
+}
+
+func TestSessionTokenSecret(t *testing.T) {
+	signed := fake.FakeObj("aaa", func(c *v1alpha1.Cluster) *v1alpha1.Cluster {
+		c.Spec.Security = &v1alpha1.ClusterSecurity{
+			SessionTokenSigningCertKeyPair: &corev1.LocalObjectReference{Name: "token"},
+		}
+		return c
+	})
+	one := evictedOne(false)
+	one.Spec.Version = "v9.0.0"
+	// A new pod gets the cert of the cluster.
+	assert.Equal(t, "token", SessionTokenSecret(signed, nil))
+	withCert := newPod(signed, one, nil, SessionTokenSecret(signed, nil), nil)
+	assert.Equal(t, "token", SessionTokenSecret(signed, withCert))
+	// A running pod keeps the cert it was created with.
+	without := newPod(signed, one, nil, "", nil)
+	assert.Empty(t, SessionTokenSecret(signed, without))
 }

@@ -16,7 +16,10 @@ package tasks
 
 import (
 	"context"
+	"fmt"
+	"path"
 
+	"github.com/pelletier/go-toml/v2"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
@@ -25,35 +28,71 @@ import (
 	"github.com/pingcap/tidb-operator/v2/pkg/client"
 	"github.com/pingcap/tidb-operator/v2/pkg/runtime/scope"
 	"github.com/pingcap/tidb-operator/v2/pkg/utils/task/v3"
-	"github.com/pelletier/go-toml/v2"
 )
 
 func TaskConfigMap(state *ReconcileContext, c client.Client) task.Task {
 	return task.NameTaskFunc("ConfigMap", func(ctx context.Context) task.Result {
 		one := state.TiDBOne()
-		if coreutil.IsTLSClusterEnabled(state.Cluster()) {
+		cluster := state.Cluster()
+		if coreutil.IsTLSClusterEnabled(cluster) {
 			return task.Fail().With("TLS is not supported by tidb-one yet")
 		}
-		// The operator managed settings (addresses, PD, data dir) are flags
-		// of tidb-one-server, so the files are the user's config as is.
-		for name, cfg := range map[string]string{
-			v1alpha1.FileNameConfig:            string(one.Spec.Config),
-			v1alpha1.FileNameConfigTiDBOneTiKV: string(one.Spec.TiKVConfig),
-		} {
-			var v map[string]any
-			if err := toml.Unmarshal([]byte(cfg), &v); err != nil {
-				return task.Fail().With("%s cannot be decoded: %v", name, err)
-			}
+		var kv map[string]any
+		if err := toml.Unmarshal([]byte(one.Spec.TiKVConfig), &kv); err != nil {
+			return task.Fail().With("%s cannot be decoded: %v", v1alpha1.FileNameConfigTiDBOneTiKV, err)
 		}
-		expected := newConfigMap(one)
+		// The config refers to the cert the pod mounts, see SessionTokenSecret.
+		secret := SessionTokenSecret(cluster, state.Pod())
+		tidbCfg, err := tidbConfig(one, secret)
+		if err != nil {
+			return task.Fail().With("%v", err)
+		}
+		expected := newConfigMap(one, tidbCfg)
 		if e := c.Apply(ctx, expected); e != nil {
 			return task.Fail().With("can't create/update cm of tidb-one: %v", e)
+		}
+		if secret == "" {
+			return task.Complete().With("cm is synced; no session token signing cert, so the routers cannot move sessions")
 		}
 		return task.Complete().With("cm is synced")
 	})
 }
 
-func newConfigMap(one *v1alpha1.TiDBOne) *corev1.ConfigMap {
+// tidbConfig is the user's TiDB config plus the session token signing cert.
+// The other operator managed settings (addresses, PD, data dir) are flags
+// of tidb-one-server, which take precedence over the file.
+func tidbConfig(one *v1alpha1.TiDBOne, tokenSecret string) (string, error) {
+	if tokenSecret == "" {
+		var v map[string]any
+		if err := toml.Unmarshal([]byte(one.Spec.Config), &v); err != nil {
+			return "", fmt.Errorf("%s cannot be decoded: %w", v1alpha1.FileNameConfig, err)
+		}
+		return string(one.Spec.Config), nil
+	}
+	cfg := map[string]any{}
+	if err := toml.Unmarshal([]byte(one.Spec.Config), &cfg); err != nil {
+		return "", fmt.Errorf("%s cannot be decoded: %w", v1alpha1.FileNameConfig, err)
+	}
+	sec, _ := cfg["security"].(map[string]any)
+	if sec == nil {
+		sec = map[string]any{}
+	}
+	for _, k := range []string{"session-token-signing-cert", "session-token-signing-key"} {
+		if _, ok := sec[k]; ok {
+			return "", fmt.Errorf("security.%s: %w", k, v1alpha1.ErrFieldIsManagedByOperator)
+		}
+	}
+	sec["session-token-signing-cert"] = path.Join(v1alpha1.DirPathTiDBSessionTokenSigningTLS, corev1.TLSCertKey)
+	sec["session-token-signing-key"] = path.Join(v1alpha1.DirPathTiDBSessionTokenSigningTLS, corev1.TLSPrivateKeyKey)
+	cfg["security"] = sec
+	data, err := toml.Marshal(cfg)
+	if err != nil {
+		return "", fmt.Errorf("%s cannot be encoded: %w", v1alpha1.FileNameConfig, err)
+	}
+	return string(data), nil
+}
+
+func newConfigMap(one *v1alpha1.TiDBOne, tidbCfg string) *corev1.ConfigMap {
 	return &corev1.ConfigMap{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      coreutil.PodName[scope.TiDBOne](one),
@@ -64,7 +103,7 @@ func newConfigMap(one *v1alpha1.TiDBOne) *corev1.ConfigMap {
 			},
 		},
 		Data: map[string]string{
-			v1alpha1.FileNameConfig:            string(one.Spec.Config),
+			v1alpha1.FileNameConfig:            tidbCfg,
 			v1alpha1.FileNameConfigTiDBOneTiKV: string(one.Spec.TiKVConfig),
 		},
 	}

@@ -28,7 +28,7 @@ type state struct {
 	key types.NamespacedName
 
 	cluster *v1alpha1.Cluster
-	og     *v1alpha1.TiDBOneRouterGroup
+	og      *v1alpha1.TiDBOneRouterGroup
 	kvs     []*v1alpha1.TiDBOneRouter
 
 	updateRevision  string

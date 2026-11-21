@@ -167,7 +167,7 @@ func (t *TaskContext) Sync(ctx task.Context[ReconcileContext]) task.Result {
 	}
 	rtx.TiKVWorkerGroups = wgs
 
-	if err := rtx.tidbOneGroups.list(ctx, t.Client, ns, name); err != nil { // tidb-one
+	if err := rtx.listTiDBOne(ctx, t.Client, ns, name); err != nil { // tidb-one
 		return task.Fail().With("%v", err)
 	}
 

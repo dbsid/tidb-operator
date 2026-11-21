@@ -160,6 +160,7 @@ func TaskDeletePod(state *ReconcileContext, c client.Client) task.Task {
 			return task.Complete().With("pod has been deleted")
 		}
 		if pod.GetDeletionTimestamp().IsZero() {
+			//nolint:gocritic // not a real issue, see https://github.com/go-critic/go-critic/issues/1448
 			if err := c.Delete(ctx, pod, client.GracePeriodSeconds(gracePeriodSeconds)); client.IgnoreNotFound(err) != nil {
 				return task.Fail().With("can't delete pod of tidb-one-router: %v", err)
 			}

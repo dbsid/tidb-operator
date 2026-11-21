@@ -137,9 +137,9 @@ func TiDBOneRouterNewer(og *v1alpha1.TiDBOneRouterGroup, rev string, fg features
 				},
 			},
 			Spec: v1alpha1.TiDBOneRouterSpec{
-				Cluster:          og.Spec.Cluster,
-				Features:         og.Spec.Features,
-				Subdomain:        coreutil.HeadlessServiceName[scope.TiDBOneRouterGroup](og),
+				Cluster:                   og.Spec.Cluster,
+				Features:                  og.Spec.Features,
+				Subdomain:                 coreutil.HeadlessServiceName[scope.TiDBOneRouterGroup](og),
 				TiDBOneRouterTemplateSpec: *spec,
 			},
 		}

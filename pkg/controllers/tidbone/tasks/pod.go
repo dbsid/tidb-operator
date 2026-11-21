@@ -75,7 +75,8 @@ func TaskSuspendPod(state *ReconcileContext, c client.Client) task.Task {
 func TaskPod(state *ReconcileContext, c client.Client, cm pdm.PDClientManager, recorder ...record.EventRecorder) task.Task {
 	return task.NameTaskFunc("Pod", func(ctx context.Context) task.Result {
 		logger := logr.FromContextOrDiscard(ctx)
-		expected := newPod(state.Cluster(), state.TiDBOne(), state.Store, state.FeatureGates())
+		expected := newPod(state.Cluster(), state.TiDBOne(), state.Store,
+			SessionTokenSecret(state.Cluster(), state.Pod()), state.FeatureGates())
 
 		pod := state.Pod()
 		if pod == nil {
@@ -186,7 +187,7 @@ func countNonSelfDownPeers(downPeerInfo *pdapi.RegionsCheckInfo, store *pdv1.Sto
 	return remainingDownPeerCount
 }
 
-func newPod(cluster *v1alpha1.Cluster, one *v1alpha1.TiDBOne, store *pdv1.Store, _ features.Gates) *corev1.Pod {
+func newPod(cluster *v1alpha1.Cluster, one *v1alpha1.TiDBOne, store *pdv1.Store, tokenSecret string, _ features.Gates) *corev1.Pod {
 	vols := []corev1.Volume{
 		{
 			Name: v1alpha1.VolumeNameConfig,
@@ -225,6 +226,20 @@ func newPod(cluster *v1alpha1.Cluster, one *v1alpha1.TiDBOne, store *pdv1.Store,
 				dataDir = mount.MountPath
 			}
 		}
+	}
+
+	if secret := tokenSecret; secret != "" {
+		vols = append(vols, corev1.Volume{
+			Name: v1alpha1.VolumeNameTiDBSessionTokenSigningTLS,
+			VolumeSource: corev1.VolumeSource{
+				Secret: &corev1.SecretVolumeSource{SecretName: secret},
+			},
+		})
+		mounts = append(mounts, corev1.VolumeMount{
+			Name:      v1alpha1.VolumeNameTiDBSessionTokenSigningTLS,
+			MountPath: v1alpha1.DirPathTiDBSessionTokenSigningTLS,
+			ReadOnly:  true,
+		})
 	}
 
 	clientPort := coreutil.TiDBOneClientPort(one)
@@ -345,4 +360,21 @@ func serverCommand(cluster *v1alpha1.Cluster, one *v1alpha1.TiDBOne, dataDir str
 		"--tikv.config", filepath.Join(v1alpha1.DirPathConfigTiDBOne, v1alpha1.FileNameConfigTiDBOneTiKV),
 		"--tikv.data-dir", dataDir,
 	}
+}
+
+// SessionTokenSecret is the session token signing secret mounted by the pod:
+// a running pod keeps the one it was created with (pod volumes cannot change),
+// a new pod gets the one of the cluster. Changing the cert of the cluster
+// takes effect when the group rolls the pods, one at a time.
+func SessionTokenSecret(cluster *v1alpha1.Cluster, pod *corev1.Pod) string {
+	if pod == nil {
+		return coreutil.TiDBOneSessionTokenSigningSecretName(cluster)
+	}
+	for i := range pod.Spec.Volumes {
+		v := &pod.Spec.Volumes[i]
+		if v.Name == v1alpha1.VolumeNameTiDBSessionTokenSigningTLS && v.Secret != nil {
+			return v.Secret.SecretName
+		}
+	}
+	return ""
 }

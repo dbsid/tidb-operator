@@ -136,11 +136,11 @@ func TiDBOneNewer(og *v1alpha1.TiDBOneGroup, rev string, fg features.Gates) upda
 				},
 			},
 			Spec: v1alpha1.TiDBOneSpec{
-				Cluster:          og.Spec.Cluster,
-				Features:         og.Spec.Features,
-				Subdomain:        coreutil.HeadlessServiceName[scope.TiDBOneGroup](og),
+				Cluster:             og.Spec.Cluster,
+				Features:            og.Spec.Features,
+				Subdomain:           coreutil.HeadlessServiceName[scope.TiDBOneGroup](og),
 				TiDBOneTemplateSpec: *spec,
-				Offline:          ptr.To(false),
+				Offline:             ptr.To(false),
 			},
 		}
 		if fg.Enabled(metav1alpha1.ClusterSubdomain) {

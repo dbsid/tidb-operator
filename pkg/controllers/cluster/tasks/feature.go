@@ -117,7 +117,7 @@ func (t *TaskFeatureGates) Sync(ctx task.Context[ReconcileContext]) task.Result 
 			return task.Fail().With("can't update feature gates for tikv worker group %s/%s: %v", wg.Namespace, wg.Name, err)
 		}
 	}
-	if err := rtx.tidbOneGroups.patchFeatures(ctx, t.Client, fs); err != nil { // tidb-one
+	if err := rtx.patchTiDBOneFeatures(ctx, t.Client, fs); err != nil { // tidb-one
 		return task.Fail().With("%v", err)
 	}
 	for _, dmg := range rtx.DMGroups {

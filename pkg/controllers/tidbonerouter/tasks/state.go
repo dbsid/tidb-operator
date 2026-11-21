@@ -29,7 +29,7 @@ type state struct {
 	key types.NamespacedName
 
 	cluster *v1alpha1.Cluster
-	router *v1alpha1.TiDBOneRouter
+	router  *v1alpha1.TiDBOneRouter
 	pod     *corev1.Pod
 
 	// Pod cannot be updated when call DELETE API, so we have to set this field to indicate
@@ -138,4 +138,3 @@ func (s *state) IsHealthy() bool {
 func (s *state) SetHealthy() {
 	s.healthy = true
 }
-

@@ -119,86 +119,93 @@ func routerStatusAddrs(ctx context.Context, c client.Client, cluster *v1alpha1.C
 // wait for it to be true.
 func TaskRouterDrain(state *ReconcileContext, c client.Client, api RouterAPI) task.Task {
 	return task.NameTaskFunc("RouterDrain", func(ctx context.Context) task.Result {
-		logger := logr.FromContextOrDiscard(ctx)
 		one := state.TiDBOne()
-		cluster := state.Cluster()
-		sqlAddr := SQLAddr(cluster, one)
-		cond := meta.FindStatusCondition(one.Status.Conditions, v1alpha1.TiDBOneCondRoutersDrained)
-
-		wantDrain := state.PodNeedsRestart || coreutil.IsOffline[scope.TiDBOne](one)
-		if wantDrain && state.Store != nil {
+		offline := coreutil.IsOffline[scope.TiDBOne](one)
+		if !state.PodNeedsRestart && !offline {
+			return resumeOnRouters(ctx, state, c, api)
+		}
+		if state.Store != nil {
 			// Leaders first: the routers send transactions next to the
 			// leaders, so with no leader left few sessions are on the server.
 			leaders := CheckTiKVLeadersEvicted(one)
-			if coreutil.IsOffline[scope.TiDBOne](one) {
+			if offline {
 				leaders = CheckTiKVLeadersEvictedOrTimeout(one, defaultLeaderEvictTimeout)
 			}
 			if leaders != nil {
 				return task.Wait().With("drain after the leaders are evicted: %v", leaders)
 			}
 		}
-
-		if !wantDrain {
-			if cond == nil || cond.Reason == v1alpha1.ReasonNotDrained {
-				return task.Complete().With("not drained")
-			}
-			if !podutil.IsReady(state.Pod()) || state.IsPodTerminating() {
-				return task.Wait().With("resume after the pod is ready")
-			}
-			addrs, err := routerStatusAddrs(ctx, c, cluster)
-			if err != nil {
-				return task.Fail().With("cannot list routers: %v", err)
-			}
-			for _, a := range addrs {
-				if err := api.Resume(ctx, a, sqlAddr); err != nil {
-					// A router that is down does not route to the server; it
-					// learns the server from /info/all when it is back.
-					logger.Info("cannot resume on router, skip it", "router", a, "error", err.Error())
-				}
-			}
-			if setDrainedCond(one, metav1.ConditionFalse, v1alpha1.ReasonNotDrained, "routers send transactions to the server") {
-				state.SetStatusChanged()
-			}
-			return task.Complete().With("resumed on %d routers", len(addrs))
-		}
-
-		addrs, err := routerStatusAddrs(ctx, c, cluster)
-		if err != nil {
-			return task.Fail().With("cannot list routers: %v", err)
-		}
-		var conns int64
-		for _, a := range addrs {
-			n, err := api.Drain(ctx, a, sqlAddr)
-			if err != nil {
-				logger.Info("cannot drain on router, skip it", "router", a, "error", err.Error())
-				continue
-			}
-			conns += n
-		}
-
-		switch {
-		case conns == 0:
-			if setDrainedCond(one, metav1.ConditionTrue, v1alpha1.ReasonDrained,
-				fmt.Sprintf("no connection from %d routers", len(addrs))) {
-				state.SetStatusChanged()
-			}
-			return task.Complete().With("drained on %d routers", len(addrs))
-		case cond == nil || cond.Reason == v1alpha1.ReasonNotDrained:
-			// The first drain request: the timeout starts now, so the
-			// transition time of the condition must be reset.
-			meta.RemoveStatusCondition(&one.Status.Conditions, v1alpha1.TiDBOneCondRoutersDrained)
-			setDrainedCond(one, metav1.ConditionFalse, v1alpha1.ReasonDraining,
-				fmt.Sprintf("%d connections left", conns))
-			state.SetStatusChanged()
-		case cond.Reason == v1alpha1.ReasonDraining &&
-			time.Since(cond.LastTransitionTime.Time) >= time.Duration(coreutil.TiDBOneDrainTimeoutSeconds(one))*time.Second:
-			setDrainedCond(one, metav1.ConditionTrue, v1alpha1.ReasonDrainTimeout,
-				fmt.Sprintf("drain timed out with %d connections left", conns))
-			state.SetStatusChanged()
-			return task.Complete().With("drain timed out, %d connections left", conns)
-		}
-		return task.Retry(time.Second).With("draining, %d connections left", conns)
+		return drainOnRouters(ctx, state, c, api)
 	})
+}
+
+func resumeOnRouters(ctx context.Context, state *ReconcileContext, c client.Client, api RouterAPI) task.Result {
+	one := state.TiDBOne()
+	cond := meta.FindStatusCondition(one.Status.Conditions, v1alpha1.TiDBOneCondRoutersDrained)
+	if cond == nil || cond.Reason == v1alpha1.ReasonNotDrained {
+		return task.Complete().With("not drained")
+	}
+	if !podutil.IsReady(state.Pod()) || state.IsPodTerminating() {
+		return task.Wait().With("resume after the pod is ready")
+	}
+	addrs, err := routerStatusAddrs(ctx, c, state.Cluster())
+	if err != nil {
+		return task.Fail().With("cannot list routers: %v", err)
+	}
+	sqlAddr := SQLAddr(state.Cluster(), one)
+	for _, a := range addrs {
+		if err := api.Resume(ctx, a, sqlAddr); err != nil {
+			// A router that is down does not route to the server; it
+			// learns the server from /info/all when it is back.
+			logr.FromContextOrDiscard(ctx).Info("cannot resume on router, skip it", "router", a, "error", err.Error())
+		}
+	}
+	if setDrainedCond(one, metav1.ConditionFalse, v1alpha1.ReasonNotDrained, "routers send transactions to the server") {
+		state.SetStatusChanged()
+	}
+	return task.Complete().With("resumed on %d routers", len(addrs))
+}
+
+func drainOnRouters(ctx context.Context, state *ReconcileContext, c client.Client, api RouterAPI) task.Result {
+	one := state.TiDBOne()
+	cond := meta.FindStatusCondition(one.Status.Conditions, v1alpha1.TiDBOneCondRoutersDrained)
+	addrs, err := routerStatusAddrs(ctx, c, state.Cluster())
+	if err != nil {
+		return task.Fail().With("cannot list routers: %v", err)
+	}
+	sqlAddr := SQLAddr(state.Cluster(), one)
+	var conns int64
+	for _, a := range addrs {
+		n, err := api.Drain(ctx, a, sqlAddr)
+		if err != nil {
+			logr.FromContextOrDiscard(ctx).Info("cannot drain on router, skip it", "router", a, "error", err.Error())
+			continue
+		}
+		conns += n
+	}
+
+	switch {
+	case conns == 0:
+		if setDrainedCond(one, metav1.ConditionTrue, v1alpha1.ReasonDrained,
+			fmt.Sprintf("no connection from %d routers", len(addrs))) {
+			state.SetStatusChanged()
+		}
+		return task.Complete().With("drained on %d routers", len(addrs))
+	case cond == nil || cond.Reason == v1alpha1.ReasonNotDrained:
+		// The first drain request: the timeout starts now, so the
+		// transition time of the condition must be reset.
+		meta.RemoveStatusCondition(&one.Status.Conditions, v1alpha1.TiDBOneCondRoutersDrained)
+		setDrainedCond(one, metav1.ConditionFalse, v1alpha1.ReasonDraining,
+			fmt.Sprintf("%d connections left", conns))
+		state.SetStatusChanged()
+	case cond.Reason == v1alpha1.ReasonDraining &&
+		time.Since(cond.LastTransitionTime.Time) >= time.Duration(coreutil.TiDBOneDrainTimeoutSeconds(one))*time.Second:
+		setDrainedCond(one, metav1.ConditionTrue, v1alpha1.ReasonDrainTimeout,
+			fmt.Sprintf("drain timed out with %d connections left", conns))
+		state.SetStatusChanged()
+		return task.Complete().With("drain timed out, %d connections left", conns)
+	}
+	return task.Retry(time.Second).With("draining, %d connections left", conns)
 }
 
 func setDrainedCond(one *v1alpha1.TiDBOne, status metav1.ConditionStatus, reason, msg string) bool {

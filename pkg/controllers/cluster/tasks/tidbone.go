@@ -33,11 +33,11 @@ type tidbOneGroups struct {
 	TiDBOneRouterGroups []*v1alpha1.TiDBOneRouterGroup
 }
 
-func (g *tidbOneGroups) count() int {
+func (g *tidbOneGroups) tidbOneCount() int {
 	return len(g.TiDBOneGroups) + len(g.TiDBOneRouterGroups)
 }
 
-func (g *tidbOneGroups) list(ctx context.Context, c client.Client, ns, name string) error {
+func (g *tidbOneGroups) listTiDBOne(ctx context.Context, c client.Client, ns, name string) error {
 	ogs, err := apicall.ListGroups[scope.TiDBOneGroup](ctx, c, ns, name)
 	if err != nil {
 		return fmt.Errorf("can't list tidb-one groups: %w", err)
@@ -50,7 +50,7 @@ func (g *tidbOneGroups) list(ctx context.Context, c client.Client, ns, name stri
 	return nil
 }
 
-func (g *tidbOneGroups) patchFeatures(ctx context.Context, c client.Client, fs []meta.Feature) error {
+func (g *tidbOneGroups) patchTiDBOneFeatures(ctx context.Context, c client.Client, fs []meta.Feature) error {
 	for _, og := range g.TiDBOneGroups {
 		if err := patchFeatures[scope.TiDBOneGroup](ctx, c, og, fs); err != nil {
 			return fmt.Errorf("can't update feature gates for tidb-one group %s/%s: %w", og.Namespace, og.Name, err)
@@ -64,13 +64,15 @@ func (g *tidbOneGroups) patchFeatures(ctx context.Context, c client.Client, fs [
 	return nil
 }
 
-func (g *tidbOneGroups) delete(ctx context.Context, c client.Client) error {
+func (g *tidbOneGroups) deleteTiDBOne(ctx context.Context, c client.Client) error {
 	for _, og := range g.TiDBOneGroups {
+		//nolint:gocritic // not a real issue, see https://github.com/go-critic/go-critic/issues/1448
 		if err := c.Delete(ctx, og); client.IgnoreNotFound(err) != nil {
 			return fmt.Errorf("can't delete tidb-one group: %w", err)
 		}
 	}
 	for _, rg := range g.TiDBOneRouterGroups {
+		//nolint:gocritic // not a real issue, see https://github.com/go-critic/go-critic/issues/1448
 		if err := c.Delete(ctx, rg); client.IgnoreNotFound(err) != nil {
 			return fmt.Errorf("can't delete tidb-one router group: %w", err)
 		}
@@ -78,7 +80,7 @@ func (g *tidbOneGroups) delete(ctx context.Context, c client.Client) error {
 	return nil
 }
 
-func (g *tidbOneGroups) components() []v1alpha1.ComponentStatus {
+func (g *tidbOneGroups) tidbOneComponents() []v1alpha1.ComponentStatus {
 	var cs []v1alpha1.ComponentStatus
 	if len(g.TiDBOneGroups) > 0 {
 		s := v1alpha1.ComponentStatus{Kind: v1alpha1.ComponentKindTiDBOne}
@@ -101,7 +103,7 @@ func (g *tidbOneGroups) components() []v1alpha1.ComponentStatus {
 	return cs
 }
 
-func (g *tidbOneGroups) notSatisfying(groups []string, clusterGeneration int64, conditionType string) []string {
+func (g *tidbOneGroups) tidbOneNotSatisfying(groups []string, clusterGeneration int64, conditionType string) []string {
 	groups = appendGroupsNotSatisfyingCondition[scope.TiDBOneGroup](groups, g.TiDBOneGroups, clusterGeneration, conditionType)
 	return appendGroupsNotSatisfyingCondition[scope.TiDBOneRouterGroup](groups, g.TiDBOneRouterGroups, clusterGeneration, conditionType)
 }

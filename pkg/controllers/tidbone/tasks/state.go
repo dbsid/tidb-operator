@@ -40,7 +40,7 @@ type state struct {
 	key types.NamespacedName
 
 	cluster *v1alpha1.Cluster
-	one    *v1alpha1.TiDBOne
+	one     *v1alpha1.TiDBOne
 	pod     *corev1.Pod
 
 	// Pod cannot be updated when call DELETE API, so we have to set this field to indicate

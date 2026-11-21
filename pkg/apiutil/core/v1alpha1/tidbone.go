@@ -80,3 +80,13 @@ func TiDBOneRouterClientPort(r *v1alpha1.TiDBOneRouter) int32 {
 func TiDBOneRouterStatusPort(r *v1alpha1.TiDBOneRouter) int32 {
 	return portOr(r.Spec.Server.Ports.Status, v1alpha1.DefaultTiDBOneRouterPortStatus)
 }
+
+// TiDBOneSessionTokenSigningSecretName is the secret with the cert that signs
+// the session tokens. The routers move a session to another server with
+// such a token, so all servers of the cluster must share the cert.
+func TiDBOneSessionTokenSigningSecretName(cluster *v1alpha1.Cluster) string {
+	if cluster.Spec.Security != nil && cluster.Spec.Security.SessionTokenSigningCertKeyPair != nil {
+		return cluster.Spec.Security.SessionTokenSigningCertKeyPair.Name
+	}
+	return ""
+}
