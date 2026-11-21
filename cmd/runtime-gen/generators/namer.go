@@ -25,6 +25,7 @@ const (
 	nameTiProxy = "TiProxy"
 	nameTiKV    = "TiKV"
 	nameTiFlash = "TiFlash"
+	nameTiDBOne = "TiDBOne" // tidb-one
 )
 
 type NameFunc func(t *types.Type) string
@@ -91,7 +92,7 @@ func GroupToInternalTLSTypeName(t *types.Type) string {
 
 func InstanceToServerLabelsField(t *types.Type) string {
 	switch t.Name.Name {
-	case nameTiDB, nameTiKV, nameTiFlash, nameTiProxy:
+	case nameTiDB, nameTiKV, nameTiFlash, nameTiProxy, nameTiDBOne: // tidb-one
 		return "in.Spec.Server.Labels"
 	}
 
@@ -99,7 +100,7 @@ func InstanceToServerLabelsField(t *types.Type) string {
 }
 
 func InstanceToAvailableFuncName(t *types.Type) string {
-	if t.Name.Name == nameTiKV {
+	if t.Name.Name == nameTiKV || t.Name.Name == nameTiDBOne { // tidb-one: leaders are evicted as for TiKV
 		return "isTiKVAvailable"
 	}
 

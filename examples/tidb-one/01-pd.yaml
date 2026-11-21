@@ -1,0 +1,18 @@
+apiVersion: core.pingcap.com/v1alpha1
+kind: PDGroup
+metadata:
+  name: pd
+spec:
+  cluster:
+    name: one
+  replicas: 3
+  template:
+    spec:
+      # Official PD (TiDB master), which includes TiDB Dashboard.
+      version: v9.0.0-beta.2
+      image: pingcap/pd:nightly
+      volumes:
+      - name: data
+        mounts:
+        - type: data
+        storage: 10Gi

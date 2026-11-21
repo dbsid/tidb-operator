@@ -49,6 +49,8 @@ type ReconcileContext struct {
 	TiKVWorkerGroups      []*v1alpha1.TiKVWorkerGroup
 	DMGroups              []*v1alpha1.DMGroup
 	DMWorkerGroups        []*v1alpha1.DMWorkerGroup
+
+	tidbOneGroups // tidb-one
 }
 
 func (ctx *ReconcileContext) Self() *ReconcileContext {
@@ -164,6 +166,10 @@ func (t *TaskContext) Sync(ctx task.Context[ReconcileContext]) task.Result {
 		return task.Fail().With("can't list tikv worker groups: %v", err)
 	}
 	rtx.TiKVWorkerGroups = wgs
+
+	if err := rtx.listTiDBOne(ctx, t.Client, ns, name); err != nil { // tidb-one
+		return task.Fail().With("%v", err)
+	}
 
 	dmgs, err := apicall.ListGroups[scope.DMGroup](ctx, t.Client, ns, name)
 	if err != nil {

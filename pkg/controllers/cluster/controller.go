@@ -72,6 +72,9 @@ func Setup(mgr manager.Manager, c client.Client, pdcm pdm.PDClientManager) error
 		Watches(&v1alpha1.TiKVWorkerGroup{}, handler.EnqueueRequestsFromMapFunc(enqueueForGroupFunc[scope.TiKVWorkerGroup]())).
 		Watches(&v1alpha1.DMGroup{}, handler.EnqueueRequestsFromMapFunc(enqueueForGroupFunc[scope.DMGroup]())).
 		Watches(&v1alpha1.DMWorkerGroup{}, handler.EnqueueRequestsFromMapFunc(enqueueForGroupFunc[scope.DMWorkerGroup]())).
+		// tidb-one
+		Watches(&v1alpha1.TiDBOneGroup{}, handler.EnqueueRequestsFromMapFunc(enqueueForGroupFunc[scope.TiDBOneGroup]())).
+		Watches(&v1alpha1.TiDBOneRouterGroup{}, handler.EnqueueRequestsFromMapFunc(enqueueForGroupFunc[scope.TiDBOneRouterGroup]())).
 		WithOptions(controller.Options{RateLimiter: k8s.RateLimiter}).
 		Complete(r)
 }

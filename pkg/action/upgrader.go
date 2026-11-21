@@ -68,7 +68,9 @@ func (defaultPolicy[S, F, T]) ArePreconditionsMet(ctx context.Context, cli clien
 	switch scope.Component[S]() {
 	case v1alpha1.LabelValComponentTiProxy, v1alpha1.LabelValComponentPD,
 		v1alpha1.LabelValComponentTiCDC,
-		v1alpha1.LabelValComponentDMMaster, v1alpha1.LabelValComponentDMWorker:
+		v1alpha1.LabelValComponentDMMaster, v1alpha1.LabelValComponentDMWorker,
+		// tidb-one: versioned apart from PD, so no version order is checked
+		v1alpha1.LabelValComponentTiDBOne, v1alpha1.LabelValComponentTiDBOneRouter:
 	case v1alpha1.LabelValComponentTSO, v1alpha1.LabelValComponentScheduling, v1alpha1.LabelValComponentScheduler:
 		comps = append(comps,
 			v1alpha1.LabelValComponentPD,

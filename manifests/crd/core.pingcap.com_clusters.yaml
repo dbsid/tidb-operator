@@ -280,6 +280,8 @@ spec:
                       - TiCDC
                       - TiProxy
                       - TiKVWorker
+                      - TiDBOne
+                      - TiDBOneRouter
                       type: string
                     replicas:
                       description: Replicas is the number of desired replicas of the

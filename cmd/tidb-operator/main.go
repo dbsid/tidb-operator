@@ -435,6 +435,10 @@ func addIndexer(ctx context.Context, mgr ctrl.Manager) error {
 		return err
 	}
 
+	if err := addTiDBOneIndexer(ctx, mgr); err != nil { // tidb-one
+		return err
+	}
+
 	return nil
 }
 
@@ -649,6 +653,8 @@ func setupControllers(
 		},
 	}
 
+	setups = append(setups, tidbOneControllerSetups(mgr, c, pdcm, vm, tf)...) // tidb-one
+
 	for _, s := range setups {
 		if err := s.setupFunc(); err != nil {
 			return fmt.Errorf("unable to create controller %s: %w", s.name, err)
@@ -824,6 +830,7 @@ func BuildCacheByObject() map[client.Object]cache.ByObject {
 		},
 		// TiBRGC objects end
 	}
+	addTiDBOneCacheByObject(byObj) // tidb-one
 	if kubefeat.Stage(kubefeat.VolumeAttributesClass).Enabled(kubefeat.BETA) {
 		byObj[&storagev1beta1.VolumeAttributesClass{}] = cache.ByObject{
 			Label: labels.Everything(),

@@ -1,0 +1,7 @@
+# tidb-one: TiDB and TiKV in one process (tidb-one-server), with the
+# TiProxy locality router in front. See README.md.
+apiVersion: core.pingcap.com/v1alpha1
+kind: Cluster
+metadata:
+  name: one
+spec: {}

@@ -184,6 +184,8 @@ func (*TaskStatus) syncComponentStatus(rtx *ReconcileContext) bool {
 		components = append(components, s)
 	}
 
+	components = append(components, rtx.tidbOneComponents()...) // tidb-one
+
 	sort.Slice(components, func(i, j int) bool {
 		return components[i].Kind < components[j].Kind
 	})
@@ -237,7 +239,8 @@ func (*TaskStatus) syncConditions(rtx *ReconcileContext) bool {
 		len(rtx.TSOGroups) + len(rtx.SchedulingGroups) + len(rtx.SchedulerGroups) +
 		len(rtx.TiKVGroups) + len(rtx.TiFlashGroups) + len(rtx.TiDBGroups) +
 		len(rtx.TiCDCGroups) + len(rtx.TiProxyGroups) + len(rtx.TiKVWorkerGroups) +
-		len(rtx.DMGroups) + len(rtx.DMWorkerGroups)
+		len(rtx.DMGroups) + len(rtx.DMWorkerGroups) +
+		rtx.tidbOneCount() // tidb-one
 	// TODO: Bind observedClusterGeneration to Group/Instance Ready and Synced updates, so lower-level
 	// conditions can become true only after reconciling the current Cluster generation. For now, the
 	// Cluster aggregation validates observedClusterGeneration separately.
@@ -336,6 +339,7 @@ func groupsNotSatisfyingCondition(rtx *ReconcileContext, clusterGeneration int64
 	groups = appendGroupsNotSatisfyingCondition[scope.TiKVWorkerGroup](groups, rtx.TiKVWorkerGroups, clusterGeneration, conditionType)
 	groups = appendGroupsNotSatisfyingCondition[scope.DMGroup](groups, rtx.DMGroups, clusterGeneration, conditionType)
 	groups = appendGroupsNotSatisfyingCondition[scope.DMWorkerGroup](groups, rtx.DMWorkerGroups, clusterGeneration, conditionType)
+	groups = rtx.tidbOneNotSatisfying(groups, clusterGeneration, conditionType) // tidb-one
 	return groups
 }
 

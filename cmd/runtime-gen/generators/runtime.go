@@ -298,7 +298,8 @@ func (in *$.|pub$) ClusterCASecretName() string {
 `, t)
 
 	// Generate offline methods for components that support spec.offline.
-	if strings.EqualFold(t.Name.Name, "TiKV") || strings.EqualFold(t.Name.Name, "TiFlash") || strings.EqualFold(t.Name.Name, "TiProxy") {
+	if strings.EqualFold(t.Name.Name, "TiKV") || strings.EqualFold(t.Name.Name, "TiFlash") || strings.EqualFold(t.Name.Name, "TiProxy") ||
+		strings.EqualFold(t.Name.Name, nameTiDBOne) { // tidb-one
 		sw.Do(`
 func (in *$.|pub$) IsOffline() bool {
 	return in.Spec.Offline != nil && *in.Spec.Offline
@@ -312,7 +313,8 @@ func (in *$.|pub$) IsOffline() bool {
 `, t)
 	}
 
-	if strings.EqualFold(t.Name.Name, "TiKV") || strings.EqualFold(t.Name.Name, "TiFlash") {
+	if strings.EqualFold(t.Name.Name, "TiKV") || strings.EqualFold(t.Name.Name, "TiFlash") ||
+		strings.EqualFold(t.Name.Name, nameTiDBOne) { // tidb-one
 		sw.Do(`
 func (in *$.|pub$) SupportsOffline() bool {
 	return true
